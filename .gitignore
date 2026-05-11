@@ -4,3 +4,11 @@ scripts/current.pine
 temp_*
 *.log
 discovery-log.json
+
+# VPS secrets — never commit real credentials
+vps/credentials/credentials.env
+vps/credentials/*.pem
+vps/credentials/*.key
+vps/config/server.config.json
+vps/logs/
+vps/backups/

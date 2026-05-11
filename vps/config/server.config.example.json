@@ -1,0 +1,33 @@
+{
+  "server": {
+    "name": "hermes-vps",
+    "provider": "hostinger",
+    "region": "",
+    "plan": "",
+    "os": "Ubuntu 22.04 LTS",
+    "ipv4": "",
+    "ipv6": ""
+  },
+  "hermes": {
+    "port": 3000,
+    "node_env": "production",
+    "log_level": "info",
+    "restart_policy": "always"
+  },
+  "mcp": {
+    "cdp_port": 9222,
+    "screenshot_dir": "/opt/hermes/screenshots"
+  },
+  "nginx": {
+    "domain": "",
+    "ssl": true,
+    "proxy_pass": "http://localhost:3000"
+  },
+  "pm2": {
+    "app_name": "hermes-agent",
+    "instances": 1,
+    "watch": false,
+    "autorestart": true,
+    "max_memory_restart": "512M"
+  }
+}
