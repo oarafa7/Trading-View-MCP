@@ -5,7 +5,7 @@
 |---------------|-------|
 | Provider      | Hostinger |
 | OS            | Ubuntu 22.04 LTS |
-| IP Address    | (fill in) |
+| IP Address    | 76.13.59.204 |
 | SSH Port      | 22 |
 | SSH User      | hermes |
 | SSH Key       | ~/.ssh/hermes_vps_rsa |
@@ -14,7 +14,7 @@
 ## Quick Access
 ```bash
 # SSH into VPS
-ssh -i ~/.ssh/hermes_vps_rsa hermes@<VPS_IP>
+ssh root@76.13.59.204
 
 # Check agent status
 pm2 status
