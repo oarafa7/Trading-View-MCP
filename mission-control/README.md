@@ -1,6 +1,6 @@
 # Mission Control — Monorepo
 
-Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). Covers the monorepo foundation, a streaming-chat slice across multiple LLM providers, the **MCP connector framework + tool-calling loop with human-in-the-loop approvals**, **realtime monitoring** (live Mission view over WebSocket), a **multi-agent workflow engine**, and a **memory/RAG layer** (ingest → embed → retrieve, injected into agent context).
+Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). Covers the monorepo foundation, a streaming-chat slice across multiple LLM providers, the **MCP connector framework + tool-calling loop with human-in-the-loop approvals**, **realtime monitoring** (live Mission view over WebSocket), a **multi-agent workflow engine**, a **memory/RAG layer**, **auth + RBAC**, and **SQLite/Drizzle persistence** (state survives restarts).
 
 See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md) for a blueprint-vs-built map.
 
@@ -11,11 +11,12 @@ See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md)
 - **Provider abstraction layer** (`packages/providers`) with a unified streaming contract and adapters for **OpenAI / Groq / OpenRouter / Together** (one OpenAI-compatible base), **Anthropic**, **Ollama** (local), and a **mock** provider for offline use. Normalized stream events, token counting, cost computation, shared error taxonomy.
 - **Agent runtime** (`packages/agent-core`) that runs an agent turn, drives the **tool-calling loop** (with HITL approval gates and an iteration cap), and emits normalized events + usage/cost events.
 - **MCP connector framework** (`packages/mcp-connectors`): uniform client over MCP servers — a `stdio` transport (any MCP server, including this repo's TradingView MCP) plus in-process `builtin` connectors. A `ConnectorManager` connects, discovers tools, routes calls, and reports health (failures isolated per connector).
-- **Gateway** (`apps/gateway`, Fastify): REST for agents/models/conversations/connectors + **SSE streaming chat** at `POST /v1/conversations/:id/messages`, **HITL approvals** at `POST /v1/runs/:runId/approvals/:toolCallId`, usage rollups. In-memory store (same surface the Postgres repo will implement).
+- **Gateway** (`apps/gateway`, Fastify): REST for agents/models/conversations/connectors + **SSE streaming chat** at `POST /v1/conversations/:id/messages`, **HITL approvals** at `POST /v1/runs/:runId/approvals/:toolCallId`, usage rollups. RBAC-guarded; backed by SQLite (see Persistence below).
 - **Realtime monitoring** (`apps/gateway` `GET /v1/realtime`, WebSocket): broadcasts `agent.status_changed`, `run.started/completed`, and `usage.recorded` to subscribed dashboards (in-process broadcaster; the Redis-backed swap is documented).
 - **Workflow engine** (`packages/agent-core` `WorkflowEngine`): executes a graph of agent/tool nodes, threading each node's output into later prompts via `{{nodeId}}` templates, with conditional edges. Gateway runs them at `POST /v1/workflows/:id/run` (SSE, node-level progress) and broadcasts `workflow.*` events.
 - **Memory / RAG** (`packages/memory`): chunking + local feature-hashing embeddings + an in-memory cosine vector store behind a `MemoryService`. Agents with long-term memory get relevant chunks retrieved and injected into context (emitting a `retrieval` event). Gateway: `GET/POST /v1/knowledge`, `POST /v1/knowledge/search`. (Swap the embedder for a provider `embed()` and the store for Qdrant in production.)
 - **Auth + RBAC** (`packages/auth`): roles (owner/admin/operator/viewer) with a permission matrix and a pluggable `AuthProvider` (`DevAuthProvider` maps `dev-<role>` bearer tokens to roles). The gateway resolves a principal per request and guards mutating routes; `GET /v1/me` returns the caller. Zero-config stays open (no token → owner in dev); set `AUTH_REQUIRED=true` to enforce. Swap in a `ClerkAuthProvider` for production — the RBAC layer is unchanged.
+- **Persistence** (`packages/db`): Drizzle schema + SQLite (`better-sqlite3`, synchronous). The gateway store is a write-through cache — agents, conversations, messages, and usage events are loaded on boot and persisted on every write, so **state survives restarts**. Same Drizzle schema runs on Postgres (swap `sqlite-core` for `pg-core`). DB path via `DB_PATH` (default `mc.db`).
 - **Web** (`apps/web`, Next.js): four views — **Chat** (live stream, tool-call chips, Approve/Reject, retrieval chip), live **Mission** (agent grid, KPIs, connector health, cost-by-model) over WebSocket, **Workflows** (graph + live per-node progress), and **Knowledge** (document ingest + RAG retrieval playground).
 
 ## Quick start
@@ -54,7 +55,8 @@ packages/agent-core     agent runtime, tool loop, workflow engine
 packages/mcp-connectors MCP connector framework (stdio + builtin)
 packages/memory         chunking, embeddings, vector store, RAG
 packages/auth           roles, permissions, pluggable auth provider
-apps/gateway            Fastify REST + SSE + WebSocket + RBAC
+packages/db             Drizzle schema + SQLite repository (persistence)
+apps/gateway            Fastify REST + SSE + WebSocket + RBAC + persistence
 apps/web                Next.js Mission Control UI (Chat/Mission/Workflows/Knowledge)
 ```
 
@@ -85,4 +87,4 @@ The TradingView MCP from this repo is registered as `conn_tradingview` (stdio). 
 
 ## Not yet implemented (next phases)
 
-Production data plumbing — Postgres/Drizzle, Qdrant, BullMQ workers, the Clerk identity provider (RBAC itself is built) — plus a drag-and-drop workflow builder, OpenTelemetry export, and K8s/Helm. The runtime interfaces already exist; see [IMPLEMENTATION-STATUS](../docs/mission-control/IMPLEMENTATION-STATUS.md) for the swap paths and the [roadmap](../docs/mission-control/14-roadmap.md).
+Remaining infra swaps — Postgres (currently SQLite via the same Drizzle schema), Qdrant (currently in-memory vectors), the Clerk identity provider (RBAC is built), BullMQ workers — plus a drag-and-drop workflow builder, OpenTelemetry export, and K8s/Helm. The runtime interfaces already exist; see [IMPLEMENTATION-STATUS](../docs/mission-control/IMPLEMENTATION-STATUS.md) for the swap paths and the [roadmap](../docs/mission-control/14-roadmap.md).

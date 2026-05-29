@@ -226,7 +226,7 @@ app.post("/v1/agents", async (req, reply) => {
     createdAt: ts,
     updatedAt: ts,
   };
-  store.agents.set(agent.id, agent);
+  store.saveAgent(agent);
   return reply.code(201).send(agent);
 });
 
@@ -242,12 +242,13 @@ app.patch("/v1/agents/:id", async (req, reply) => {
     settings: { ...agent.settings, ...(patch.settings ?? {}) },
     updatedAt: nowIso(),
   });
+  store.saveAgent(agent);
   return agent;
 });
 
 app.delete("/v1/agents/:id", async (req, reply) => {
   if (!requirePerm(req, reply, "agents:write")) return;
-  const ok = store.agents.delete((req.params as { id: string }).id);
+  const ok = store.removeAgent((req.params as { id: string }).id);
   return reply.code(ok ? 204 : 404).send();
 });
 
