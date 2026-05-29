@@ -1,0 +1,13 @@
+{
+  "name": "@mc/db",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": { "build": "tsup", "dev": "tsup --watch", "typecheck": "tsc --noEmit", "test": "vitest run" },
+  "dependencies": { "@mc/types": "workspace:*", "better-sqlite3": "^11.8.0", "drizzle-orm": "^0.38.3" },
+  "devDependencies": { "@types/better-sqlite3": "^7.6.12" }
+}

@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.next
+**/out
+**/.turbo
+**/*.tsbuildinfo
+**/coverage
+**/*.db
+**/*.db-shm
+**/*.db-wal
+.env
+.env.local
+.git

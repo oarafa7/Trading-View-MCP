@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.env
+.env.local
+coverage/
+*.db
+*.db-shm
+*.db-wal
