@@ -1,0 +1,21 @@
+{
+  "name": "@mc/gateway",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@mc/agent-core": "workspace:*",
+    "@mc/providers": "workspace:*",
+    "@mc/types": "workspace:*",
+    "fastify": "^5.2.0",
+    "zod": "^3.24.1"
+  }
+}
