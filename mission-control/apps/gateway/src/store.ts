@@ -29,7 +29,7 @@ export class MemoryStore {
     const models: ModelInfo[] = [
       { id: "mdl_mock", provider: "mock", modelId: "mock-1", displayName: "Mock (offline)", capabilities: { contextWindow: 128000, supportsTools: false, supportsStreaming: true, supportsJsonMode: true, inputModalities: ["text"] }, pricing: { inputPerM: 0, outputPerM: 0 }, enabled: true },
       { id: "mdl_gpt4o", provider: "openai", modelId: "gpt-4o", displayName: "GPT-4o", capabilities: { contextWindow: 128000, supportsTools: true, supportsStreaming: true, supportsJsonMode: true, inputModalities: ["text", "image"] }, pricing: { inputPerM: 2.5, outputPerM: 10, cachedInputPerM: 1.25 }, enabled: true },
-      { id: "mdl_claude", provider: "anthropic", modelId: "claude-3-5-sonnet-latest", displayName: "Claude 3.5 Sonnet", capabilities: { contextWindow: 200000, supportsTools: true, supportsStreaming: true, supportsJsonMode: false, inputModalities: ["text", "image"] }, pricing: { inputPerM: 3, outputPerM: 15, cachedInputPerM: 0.3 }, enabled: true },
+      { id: "mdl_claude", provider: "anthropic", modelId: process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6", displayName: "Claude Sonnet", capabilities: { contextWindow: 200000, supportsTools: true, supportsStreaming: true, supportsJsonMode: false, inputModalities: ["text", "image"] }, pricing: { inputPerM: 3, outputPerM: 15, cachedInputPerM: 0.3 }, enabled: true },
       { id: "mdl_llama", provider: "ollama", modelId: "llama3.1", displayName: "Llama 3.1 (local)", capabilities: { contextWindow: 128000, supportsTools: true, supportsStreaming: true, supportsJsonMode: true, inputModalities: ["text"] }, pricing: { inputPerM: 0, outputPerM: 0 }, enabled: true },
     ];
     for (const m of models) this.models.set(m.id, m);
