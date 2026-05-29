@@ -7,9 +7,11 @@ import { AgentRuntime, WorkflowEngine, id, nowIso, type ResolvedTool, type RunEv
 import type { AgentDefinition } from "@mc/types";
 import { MemoryStore } from "./store.js";
 import { loadConfig, makeModelResolver } from "./config.js";
+import { MemoryService } from "@mc/memory";
 import { SSEStream } from "./sse.js";
 import { buildConnectors } from "./connectors.js";
 import { Realtime } from "./realtime.js";
+import { seedKnowledge } from "./knowledge.js";
 
 const config = loadConfig();
 const store = new MemoryStore();
@@ -17,6 +19,8 @@ const registry = new ProviderRegistry();
 const runtime = new AgentRuntime(registry, makeModelResolver(store));
 const connectors = buildConnectors();
 const realtime = new Realtime();
+const memory = new MemoryService();
+seedKnowledge(memory, store.workspaceId);
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 await app.register(cors, { origin: true, credentials: true });
@@ -100,6 +104,27 @@ app.get("/v1/models", async () => [...store.models.values()]);
 app.get("/v1/connectors", async () =>
   connectors.health().map((h) => ({ ...h, tools: connectors.toolsFor(h.id).map((t) => t.name) })),
 );
+
+// --- knowledge base / RAG ---
+app.get("/v1/knowledge", async () => ({
+  sources: memory.listSources(store.workspaceId),
+  stats: memory.stats(store.workspaceId),
+}));
+
+const IngestDoc = z.object({ title: z.string().min(1), text: z.string().min(1) });
+app.post("/v1/knowledge", async (req, reply) => {
+  const parsed = IngestDoc.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
+  const source = memory.ingest(store.workspaceId, parsed.data.title, parsed.data.text);
+  return reply.code(201).send(source);
+});
+
+const SearchDoc = z.object({ query: z.string().min(1), topK: z.number().int().positive().max(20).default(5) });
+app.post("/v1/knowledge/search", async (req, reply) => {
+  const parsed = SearchDoc.safeParse(req.body);
+  if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
+  return { query: parsed.data.query, chunks: memory.retrieve(store.workspaceId, parsed.data.query, parsed.data.topK) };
+});
 
 // --- workflows ---
 app.get("/v1/workflows", async () => [...store.workflows.values()]);
@@ -278,6 +303,9 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
       signal: ac.signal,
       tools: tools.length ? tools : undefined,
       executeTool: (connectorId, name, args) => connectors.call(connectorId, name, args),
+      retrieveContext: agent.memory.longTerm
+        ? async (query) => memory.retrieve(store.workspaceId, query, agent.memory.retrieval?.topK ?? 5)
+        : undefined,
       requestApproval: ({ toolCallId }) =>
         new Promise<boolean>((resolve) => {
           approvalToolCallIds.add(toolCallId);
@@ -300,6 +328,9 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
           break;
         case "tool_call_done":
           sse.send("tool_call_done", { id: ev.id, name: ev.name, args: ev.args });
+          break;
+        case "retrieval":
+          sse.send("retrieval", { chunks: ev.chunks });
           break;
         case "awaiting_approval":
           setAgentStatus(agent, "awaiting_approval");

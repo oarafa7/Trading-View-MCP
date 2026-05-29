@@ -41,6 +41,9 @@ importers:
       '@mc/mcp-connectors':
         specifier: workspace:*
         version: link:../../packages/mcp-connectors
+      '@mc/memory':
+        specifier: workspace:*
+        version: link:../../packages/memory
       '@mc/providers':
         specifier: workspace:*
         version: link:../../packages/providers
@@ -105,6 +108,8 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@3.25.76)
+
+  packages/memory: {}
 
   packages/providers:
     dependencies:

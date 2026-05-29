@@ -88,7 +88,7 @@ export class MemoryStore {
         systemPrompt: "You are Mission Control's assistant. Be concise and precise.",
         modelId: "mdl_mock",
         settings: { maxToolIterations: 8 },
-        memory: { shortTerm: "window", longTerm: false },
+        memory: { shortTerm: "window", longTerm: true, retrieval: { topK: 4 } },
         tools: [
           { connectorId: "conn_utility", toolName: "get_time", requireApproval: false },
           { connectorId: "conn_utility", toolName: "add", requireApproval: false },

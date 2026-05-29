@@ -1,6 +1,6 @@
 # Mission Control — Monorepo
 
-Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). Covers the monorepo foundation, a streaming-chat vertical slice across multiple LLM providers, the **MCP connector framework + tool-calling agent loop with human-in-the-loop approvals**, **realtime workspace monitoring** (a live Mission view over WebSocket), and a **multi-agent workflow engine** (chain agents + tools with state passing).
+Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). Covers the monorepo foundation, a streaming-chat slice across multiple LLM providers, the **MCP connector framework + tool-calling loop with human-in-the-loop approvals**, **realtime monitoring** (live Mission view over WebSocket), a **multi-agent workflow engine**, and a **memory/RAG layer** (ingest → embed → retrieve, injected into agent context).
 
 See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md) for a blueprint-vs-built map.
 
@@ -14,7 +14,8 @@ See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md)
 - **Gateway** (`apps/gateway`, Fastify): REST for agents/models/conversations/connectors + **SSE streaming chat** at `POST /v1/conversations/:id/messages`, **HITL approvals** at `POST /v1/runs/:runId/approvals/:toolCallId`, usage rollups. In-memory store (same surface the Postgres repo will implement).
 - **Realtime monitoring** (`apps/gateway` `GET /v1/realtime`, WebSocket): broadcasts `agent.status_changed`, `run.started/completed`, and `usage.recorded` to subscribed dashboards (in-process broadcaster; the Redis-backed swap is documented).
 - **Workflow engine** (`packages/agent-core` `WorkflowEngine`): executes a graph of agent/tool nodes, threading each node's output into later prompts via `{{nodeId}}` templates, with conditional edges. Gateway runs them at `POST /v1/workflows/:id/run` (SSE, node-level progress) and broadcasts `workflow.*` events.
-- **Web** (`apps/web`, Next.js): three views — a **Chat** console (live stream, tool-call chips, Approve/Reject), a live **Mission** view (agent grid, KPIs, connector health, cost-by-model) over WebSocket, and a **Workflows** view (graph + live per-node progress).
+- **Memory / RAG** (`packages/memory`): chunking + local feature-hashing embeddings + an in-memory cosine vector store behind a `MemoryService`. Agents with long-term memory get relevant chunks retrieved and injected into context (emitting a `retrieval` event). Gateway: `GET/POST /v1/knowledge`, `POST /v1/knowledge/search`. (Swap the embedder for a provider `embed()` and the store for Qdrant in production.)
+- **Web** (`apps/web`, Next.js): four views — **Chat** (live stream, tool-call chips, Approve/Reject, retrieval chip), live **Mission** (agent grid, KPIs, connector health, cost-by-model) over WebSocket, **Workflows** (graph + live per-node progress), and **Knowledge** (document ingest + RAG retrieval playground).
 
 ## Quick start
 
@@ -46,11 +47,13 @@ curl -s "localhost:4000/v1/usage?groupBy=agent"
 ## Layout
 
 ```
-packages/types        zod schemas — the shared contract hub
-packages/providers    provider abstraction layer + adapters
-packages/agent-core   agent runtime, ids
-apps/gateway          Fastify REST + SSE
-apps/web              Next.js Mission Control UI
+packages/types          zod schemas — the shared contract hub
+packages/providers      provider abstraction layer + adapters
+packages/agent-core     agent runtime, tool loop, workflow engine
+packages/mcp-connectors MCP connector framework (stdio + builtin)
+packages/memory         chunking, embeddings, vector store, RAG
+apps/gateway            Fastify REST + SSE + WebSocket
+apps/web                Next.js Mission Control UI (Chat/Mission/Workflows/Knowledge)
 ```
 
 ## Scripts
@@ -80,4 +83,4 @@ The TradingView MCP from this repo is registered as `conn_tradingview` (stdio). 
 
 ## Not yet implemented (next phases)
 
-Postgres/Drizzle persistence, Clerk auth + RBAC, WebSocket live grid, workflows, RAG. See the [roadmap](../docs/mission-control/14-roadmap.md).
+Production data/auth plumbing — Postgres/Drizzle, Clerk auth + RBAC, Qdrant, BullMQ workers — plus a drag-and-drop workflow builder, OpenTelemetry export, and K8s/Helm. The runtime interfaces already exist; see [IMPLEMENTATION-STATUS](../docs/mission-control/IMPLEMENTATION-STATUS.md) for the swap paths and the [roadmap](../docs/mission-control/14-roadmap.md).

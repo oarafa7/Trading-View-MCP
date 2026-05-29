@@ -20,6 +20,7 @@ export default function MissionControl() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [live, setLive] = useState<string>("");
   const [activity, setActivity] = useState<ToolActivity[]>([]);
+  const [retrieved, setRetrieved] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
   const [totalCost, setTotalCost] = useState(0);
@@ -71,6 +72,7 @@ export default function MissionControl() {
     setMessages((prev) => [...prev, { id: `local_${Date.now()}`, role: "user", content: text }]);
     setLive("");
     setActivity([]);
+    setRetrieved([]);
     setAgents((prev) => prev.map((a) => (a.id === active.id ? { ...a, status: "running" } : a)));
 
     const upsert = (item: ToolActivity) =>
@@ -91,6 +93,7 @@ export default function MissionControl() {
       onToolCallDone: ({ id, name }) => upsert({ toolCallId: id, name, status: "called" }),
       onAwaitingApproval: ({ runId, toolCallId, name }) => upsert({ toolCallId, name, status: "awaiting", runId }),
       onToolResult: ({ toolCallId, name, ok }) => upsert({ toolCallId, name, status: ok ? "done" : "denied" }),
+      onRetrieval: (chunks) => setRetrieved(chunks.map((c) => c.sourceTitle)),
       onUsage: (u) => setTotalCost((c) => Math.round((c + u.costUsd) * 1e6) / 1e6),
       onError: (e) => {
         acc += `\n\n⚠️ ${e.code}: ${e.message}`;
@@ -122,6 +125,7 @@ export default function MissionControl() {
     setMessages([]);
     setLive("");
     setActivity([]);
+    setRetrieved([]);
   }
 
   return (
@@ -191,6 +195,12 @@ export default function MissionControl() {
           {messages.map((m) => (
             <Bubble key={m.id} role={m.role} text={m.content} />
           ))}
+          {retrieved.length > 0 && (
+            <div className="rounded-lg border border-border bg-base px-3 py-2 font-mono text-xs text-muted">
+              🔎 retrieved context from <span className="text-accent">{retrieved.length}</span> source
+              {retrieved.length > 1 ? "s" : ""}: <span className="text-white">{Array.from(new Set(retrieved)).join(", ")}</span>
+            </div>
+          )}
           {activity.length > 0 && (
             <div className="space-y-2">
               {activity.map((t) => (

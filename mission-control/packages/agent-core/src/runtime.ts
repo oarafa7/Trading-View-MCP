@@ -41,6 +41,14 @@ export interface ApprovalRequest {
 }
 export type ApprovalRequester = (req: ApprovalRequest) => Promise<boolean>;
 
+export interface RetrievedChunk {
+  text: string;
+  score: number;
+  sourceTitle?: string;
+}
+/** Long-term memory retrieval hook (RAG). Returns chunks relevant to a query. */
+export type ContextRetriever = (query: string) => Promise<RetrievedChunk[]>;
+
 /** Events the runtime emits; the gateway forwards these to SSE/WS. */
 export type RunEvent =
   | { type: "token"; delta: string }
@@ -49,6 +57,7 @@ export type RunEvent =
   | { type: "tool_call_done"; id: string; name: string; args: unknown }
   | { type: "awaiting_approval"; toolCallId: string; name: string; args: unknown }
   | { type: "tool_result"; toolCallId: string; name: string; ok: boolean; result: unknown }
+  | { type: "retrieval"; chunks: RetrievedChunk[] }
   | { type: "usage"; event: UsageEvent }
   | { type: "done"; runId: string; finishReason: FinishReason }
   | { type: "error"; error: ProviderError };
@@ -60,6 +69,7 @@ export interface RunInput {
   tools?: ResolvedTool[];
   executeTool?: ToolExecutor;
   requestApproval?: ApprovalRequester;
+  retrieveContext?: ContextRetriever;
   runId?: string;
   signal?: AbortSignal;
 }
@@ -87,6 +97,21 @@ export class AgentRuntime {
 
     const messages: UnifiedMessage[] = [];
     if (agent.systemPrompt) messages.push({ role: "system", content: agent.systemPrompt });
+
+    // Long-term memory (RAG): retrieve relevant context and inject it before the conversation.
+    if (input.retrieveContext) {
+      const lastUser = [...input.history].reverse().find((m) => m.role === "user");
+      const query = typeof lastUser?.content === "string" ? lastUser.content : "";
+      if (query) {
+        const chunks = await input.retrieveContext(query);
+        if (chunks.length) {
+          yield { type: "retrieval", chunks };
+          const block = chunks.map((c, i) => `[${i + 1}] (${c.sourceTitle ?? "source"}) ${c.text}`).join("\n\n");
+          messages.push({ role: "system", content: `Relevant context retrieved from the knowledge base:\n\n${block}` });
+        }
+      }
+    }
+
     messages.push(...input.history);
 
     const toolSpecs = input.tools?.map((t) => t.spec) ?? [];

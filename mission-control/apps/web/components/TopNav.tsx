@@ -7,6 +7,7 @@ const TABS = [
   { href: "/", label: "Chat" },
   { href: "/mission", label: "Mission" },
   { href: "/workflows", label: "Workflows" },
+  { href: "/knowledge", label: "Knowledge" },
 ];
 
 export function TopNav({ right }: { right?: React.ReactNode }) {

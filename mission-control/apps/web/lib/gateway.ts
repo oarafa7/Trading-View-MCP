@@ -45,6 +45,21 @@ export interface ConnectorHealth {
   tools: string[];
 }
 
+export interface KnowledgeSource {
+  id: string;
+  title: string;
+  status: string;
+  chunkCount: number;
+  createdAt: string;
+}
+
+export interface RetrievedChunk {
+  text: string;
+  score: number;
+  sourceId: string;
+  sourceTitle: string;
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${GATEWAY}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -58,6 +73,23 @@ export const api = {
   messages: (id: string) => getJSON<ChatMessage[]>(`/v1/conversations/${id}/messages`),
   usage: (groupBy = "agent") => getJSON<UsageRollup>(`/v1/usage?groupBy=${groupBy}`),
   connectors: () => getJSON<ConnectorHealth[]>("/v1/connectors"),
+  knowledge: () => getJSON<{ sources: KnowledgeSource[]; stats: { sources: number; chunks: number } }>("/v1/knowledge"),
+  async ingestDoc(title: string, text: string): Promise<KnowledgeSource> {
+    const res = await fetch(`${GATEWAY}/v1/knowledge`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, text }),
+    });
+    return res.json() as Promise<KnowledgeSource>;
+  },
+  async searchKnowledge(query: string, topK = 5): Promise<{ query: string; chunks: RetrievedChunk[] }> {
+    const res = await fetch(`${GATEWAY}/v1/knowledge/search`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ query, topK }),
+    });
+    return res.json() as Promise<{ query: string; chunks: RetrievedChunk[] }>;
+  },
   async createConversation(participantAgentIds: string[], title = "New conversation"): Promise<Conversation> {
     const res = await fetch(`${GATEWAY}/v1/conversations`, {
       method: "POST",
@@ -75,6 +107,7 @@ export interface StreamHandlers {
   onToolCallDone?: (info: { id: string; name: string; args: unknown }) => void;
   onAwaitingApproval?: (info: { runId: string; toolCallId: string; name: string; args: unknown }) => void;
   onToolResult?: (info: { toolCallId: string; name: string; ok: boolean; result: unknown }) => void;
+  onRetrieval?: (chunks: RetrievedChunk[]) => void;
   onUsage?: (usage: { costUsd: number; inputTokens: number; outputTokens: number }) => void;
   onDone?: () => void;
   onError?: (err: { code: string; message: string }) => void;
@@ -158,6 +191,7 @@ export function streamMessage(
       else if (event === "tool_call_done") h.onToolCallDone?.(data);
       else if (event === "awaiting_approval") h.onAwaitingApproval?.(data);
       else if (event === "tool_result") h.onToolResult?.(data);
+      else if (event === "retrieval") h.onRetrieval?.(data.chunks);
       else if (event === "usage") h.onUsage?.(data);
       else if (event === "done") h.onDone?.();
       else if (event === "error") h.onError?.(data);
