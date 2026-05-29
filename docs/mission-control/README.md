@@ -23,6 +23,7 @@ This directory is the **design blueprint** for the platform. It is documentation
 | 12 | [UI / UX](./12-ui-ux.md) | Dashboard IA, panels, design language |
 | 13 | [Security, Deployment & Scaling](./13-security-deployment-scaling.md) | Secrets, RBAC, K8s, scaling, failover |
 | 14 | [Roadmap](./14-roadmap.md) | Phased delivery plan |
+| — | [Implementation Status](./IMPLEMENTATION-STATUS.md) | What's actually built in `/mission-control` vs the blueprint |
 
 ## Deliverable traceability
 

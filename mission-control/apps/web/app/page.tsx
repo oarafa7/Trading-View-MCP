@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api, streamMessage, decideApproval, type Agent, type Model, type ChatMessage } from "@/lib/gateway";
 import { StatusDot } from "@/components/StatusDot";
+import { TopNav } from "@/components/TopNav";
 
 interface ToolActivity {
   toolCallId: string;
@@ -124,14 +125,23 @@ export default function MissionControl() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden">
+      <TopNav
+        right={
+          <span className="flex items-center gap-4">
+            <span>
+              gateway <span className={online === false ? "text-danger" : online ? "text-ok" : "text-muted"}>{online === false ? "offline" : online ? "online" : "…"}</span>
+            </span>
+            <span>
+              spend <span className="text-accent">${totalCost.toFixed(4)}</span>
+            </span>
+          </span>
+        }
+      />
+      <div className="flex flex-1 overflow-hidden">
       {/* Left rail — agent grid */}
       <aside className="flex w-72 flex-col border-r border-border bg-panel">
-        <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-          <span className="text-accent">◢</span>
-          <span className="text-sm font-semibold tracking-widest text-white">MISSION CONTROL</span>
-        </div>
-        <div className="px-4 py-2 text-[10px] uppercase tracking-widest text-muted">Agents</div>
+        <div className="px-4 py-3 text-[10px] uppercase tracking-widest text-muted">Agents</div>
         <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
           {agents.map((a) => (
             <button
@@ -160,23 +170,11 @@ export default function MissionControl() {
 
       {/* Main */}
       <main className="flex flex-1 flex-col">
-        {/* Top bar */}
-        <header className="flex items-center justify-between border-b border-border bg-panel px-5 py-3">
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-semibold text-white">{active ? active.name : "—"}</h1>
-            {active && <span className="font-mono text-xs text-muted">{modelName(active.modelId)}</span>}
-          </div>
-          <div className="flex items-center gap-5 font-mono text-xs">
-            <span className="text-muted">
-              gateway{" "}
-              <span className={online === false ? "text-danger" : online ? "text-ok" : "text-muted"}>
-                {online === false ? "offline" : online ? "online" : "…"}
-              </span>
-            </span>
-            <span className="text-muted">
-              spend <span className="text-accent">${totalCost.toFixed(4)}</span>
-            </span>
-          </div>
+        {/* Active-agent context bar */}
+        <header className="flex items-center gap-3 border-b border-border bg-panel px-5 py-3">
+          {active && <StatusDot status={active.status} />}
+          <h1 className="text-sm font-semibold text-white">{active ? active.name : "—"}</h1>
+          {active && <span className="font-mono text-xs text-muted">{modelName(active.modelId)}</span>}
         </header>
 
         {/* Chat */}
@@ -230,6 +228,7 @@ export default function MissionControl() {
           </div>
         </div>
       </main>
+      </div>
     </div>
   );
 }

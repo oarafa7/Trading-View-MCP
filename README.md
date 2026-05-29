@@ -336,6 +336,16 @@ By using this software you agree that:
 
 **Use at your own risk.**
 
+## Related: AI Mission Control
+
+This repo also contains **AI Mission Control** — a multi-provider AI agent orchestration platform — built as a separate, self-contained project that uses this TradingView MCP as one of its connectors.
+
+- **Architecture blueprint:** [`docs/mission-control/`](docs/mission-control/) (full system design, 16 docs)
+- **Working code:** [`mission-control/`](mission-control/) (Next.js + Fastify monorepo — multi-provider streaming chat, MCP tools with human-in-the-loop approvals, live WebSocket monitoring)
+- **What's built vs designed:** [`docs/mission-control/IMPLEMENTATION-STATUS.md`](docs/mission-control/IMPLEMENTATION-STATUS.md)
+
+It lives in its own directory and does not affect the TradingView MCP above.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Applies to source code only, not to TradingView's software, data, or trademarks.

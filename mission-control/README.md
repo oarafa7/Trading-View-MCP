@@ -1,6 +1,8 @@
 # Mission Control — Monorepo
 
-Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). This covers **Phases 0–2** of the [roadmap](../docs/mission-control/14-roadmap.md): the monorepo foundation, a streaming-chat vertical slice across multiple LLM providers, and the **MCP connector framework + tool-calling agent loop with human-in-the-loop approvals**.
+Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). This covers **Phases 0–3** of the [roadmap](../docs/mission-control/14-roadmap.md): the monorepo foundation, a streaming-chat vertical slice across multiple LLM providers, the **MCP connector framework + tool-calling agent loop with human-in-the-loop approvals**, and **realtime workspace monitoring** (a live Mission view over WebSocket).
+
+See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md) for a blueprint-vs-built map.
 
 > Lives in its own directory so it coexists with the existing TradingView MCP without breaking it. A later phase hoists it to the repo root and absorbs the TradingView MCP as `packages/tradingview-mcp`.
 
@@ -10,7 +12,8 @@ Implementation of the [AI Mission Control architecture blueprint](../docs/missio
 - **Agent runtime** (`packages/agent-core`) that runs an agent turn, drives the **tool-calling loop** (with HITL approval gates and an iteration cap), and emits normalized events + usage/cost events.
 - **MCP connector framework** (`packages/mcp-connectors`): uniform client over MCP servers — a `stdio` transport (any MCP server, including this repo's TradingView MCP) plus in-process `builtin` connectors. A `ConnectorManager` connects, discovers tools, routes calls, and reports health (failures isolated per connector).
 - **Gateway** (`apps/gateway`, Fastify): REST for agents/models/conversations/connectors + **SSE streaming chat** at `POST /v1/conversations/:id/messages`, **HITL approvals** at `POST /v1/runs/:runId/approvals/:toolCallId`, usage rollups. In-memory store (same surface the Postgres repo will implement).
-- **Web** (`apps/web`, Next.js): dark-mode Mission Control chat console that streams responses live, with inline tool-call chips and **Approve/Reject** controls for gated tools.
+- **Realtime monitoring** (`apps/gateway` `GET /v1/realtime`, WebSocket): broadcasts `agent.status_changed`, `run.started/completed`, and `usage.recorded` to subscribed dashboards (in-process broadcaster; the Redis-backed swap is documented).
+- **Web** (`apps/web`, Next.js): two views — a **Chat** console (live stream, tool-call chips, Approve/Reject controls) and a live **Mission** view (agent grid, KPIs, connector health, cost-by-model) updating over WebSocket.
 
 ## Quick start
 

@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import websocket from "@fastify/websocket";
 import { z } from "zod";
 import { ProviderRegistry } from "@mc/providers";
 import { AgentRuntime, id, nowIso, type ResolvedTool } from "@mc/agent-core";
@@ -8,16 +9,26 @@ import { MemoryStore } from "./store.js";
 import { loadConfig, makeModelResolver } from "./config.js";
 import { SSEStream } from "./sse.js";
 import { buildConnectors } from "./connectors.js";
+import { Realtime } from "./realtime.js";
 
 const config = loadConfig();
 const store = new MemoryStore();
 const registry = new ProviderRegistry();
 const runtime = new AgentRuntime(registry, makeModelResolver(store));
 const connectors = buildConnectors();
+const realtime = new Realtime();
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 await app.register(cors, { origin: true, credentials: true });
+await app.register(websocket);
 await connectors.connectAll((msg) => app.log.info(msg));
+
+/** Update an agent's live status and broadcast the change to subscribed dashboards. */
+function setAgentStatus(agent: AgentDefinition, status: AgentDefinition["status"]): void {
+  agent.status = status;
+  agent.updatedAt = nowIso();
+  realtime.publish("agent.status_changed", { agentId: agent.id, status, costToDate: agent.costToDate });
+}
 
 // Pending HITL approvals, keyed by toolCallId. Resolved by POST /v1/runs/:runId/approvals/:id.
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
@@ -40,6 +51,21 @@ app.get("/v1/health", async () => ({
 }));
 
 app.get("/v1/workspaces", async () => [{ id: store.workspaceId, name: "Default Workspace" }]);
+
+// --- realtime workspace state (WebSocket) ---
+app.get("/v1/realtime", { websocket: true }, (socket: { send: (d: string) => void; on: (ev: string, cb: (raw?: unknown) => void) => void }) => {
+  realtime.add(socket);
+  socket.send(JSON.stringify({ type: "hello", ts: nowIso(), data: { ok: true } }));
+  socket.on("message", (raw?: unknown) => {
+    try {
+      const msg = JSON.parse(String(raw));
+      if (msg.op === "subscribe" && Array.isArray(msg.topics)) realtime.setTopics(socket, msg.topics);
+    } catch {
+      /* ignore malformed control frames */
+    }
+  });
+  socket.on("close", () => realtime.remove(socket));
+});
 
 // --- models ---
 app.get("/v1/models", async () => [...store.models.values()]);
@@ -169,8 +195,8 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
 
   const runId = id("run");
   let assistantText = "";
-  agent.status = "running";
-  agent.updatedAt = nowIso();
+  setAgentStatus(agent, "running");
+  realtime.publish("run.started", { runId, agentId: agent.id, conversationId: convId });
 
   const tools = resolveTools(agent);
   const approvalToolCallIds = new Set<string>();
@@ -207,22 +233,23 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
           sse.send("tool_call_done", { id: ev.id, name: ev.name, args: ev.args });
           break;
         case "awaiting_approval":
-          agent.status = "awaiting_approval";
+          setAgentStatus(agent, "awaiting_approval");
           sse.send("awaiting_approval", { runId, toolCallId: ev.toolCallId, name: ev.name, args: ev.args });
           break;
         case "tool_result":
-          if (agent.status === "awaiting_approval") agent.status = "running";
+          if (agent.status === "awaiting_approval") setAgentStatus(agent, "running");
           sse.send("tool_result", { toolCallId: ev.toolCallId, name: ev.name, ok: ev.ok, result: ev.result });
           break;
         case "usage":
           store.recordUsage(ev.event);
+          realtime.publish("usage.recorded", { ...ev.event, agentCostToDate: agent.costToDate });
           sse.send("usage", ev.event);
           break;
         case "done":
           sse.send("done", { runId: ev.runId, finishReason: ev.finishReason });
           break;
         case "error":
-          agent.status = "error";
+          setAgentStatus(agent, "error");
           sse.send("error", ev.error);
           break;
       }
@@ -232,8 +259,8 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
   } finally {
     for (const tcId of approvalToolCallIds) pendingApprovals.delete(tcId);
     if (assistantText) store.addMessage(convId, { role: "assistant", content: assistantText, agentId, runId });
-    if (agent.status !== "error") agent.status = "idle";
-    agent.updatedAt = nowIso();
+    if (agent.status !== "error") setAgentStatus(agent, "idle");
+    realtime.publish("run.completed", { runId, agentId: agent.id, status: agent.status });
     sse.close();
   }
 });

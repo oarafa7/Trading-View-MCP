@@ -37,6 +37,14 @@ export interface UsageRollup {
   buckets: { key: string; costUsd: number; inputTokens: number; outputTokens: number; calls: number }[];
 }
 
+export interface ConnectorHealth {
+  id: string;
+  name: string;
+  status: "ok" | "degraded" | "down";
+  toolCount: number;
+  tools: string[];
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(`${GATEWAY}${path}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
@@ -49,6 +57,7 @@ export const api = {
   conversations: () => getJSON<Conversation[]>("/v1/conversations"),
   messages: (id: string) => getJSON<ChatMessage[]>(`/v1/conversations/${id}/messages`),
   usage: (groupBy = "agent") => getJSON<UsageRollup>(`/v1/usage?groupBy=${groupBy}`),
+  connectors: () => getJSON<ConnectorHealth[]>("/v1/connectors"),
   async createConversation(participantAgentIds: string[], title = "New conversation"): Promise<Conversation> {
     const res = await fetch(`${GATEWAY}/v1/conversations`, {
       method: "POST",
