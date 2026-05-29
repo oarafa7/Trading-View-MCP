@@ -9,10 +9,12 @@
   },
   "scripts": {
     "build": "turbo run build",
-    "dev": "turbo run dev",
-    "test": "turbo run test",
-    "typecheck": "turbo run typecheck",
-    "gateway": "pnpm --filter @mc/gateway dev"
+    "dev": "turbo run dev --filter=@mc/gateway --filter=@mc/web",
+    "dev:gateway": "turbo run dev --filter=@mc/gateway",
+    "dev:web": "turbo run dev --filter=@mc/web",
+    "test": "vitest run",
+    "test:turbo": "turbo run test",
+    "typecheck": "turbo run typecheck"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

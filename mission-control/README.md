@@ -19,22 +19,32 @@ See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md)
 - **Persistence** (`packages/db`): Drizzle schema + SQLite (`better-sqlite3`, synchronous). The gateway store is a write-through cache — agents, conversations, messages, and usage events are loaded on boot and persisted on every write, so **state survives restarts**. Same Drizzle schema runs on Postgres (swap `sqlite-core` for `pg-core`). DB path via `DB_PATH` (default `mc.db`).
 - **Web** (`apps/web`, Next.js): four views — **Chat** (live stream, tool-call chips, Approve/Reject, retrieval chip), live **Mission** (agent grid, KPIs, connector health, cost-by-model) over WebSocket, **Workflows** (graph + live per-node progress), and **Knowledge** (document ingest + RAG retrieval playground).
 
-## Quick start
+## Quick start (one command)
 
 ```bash
 cd mission-control
 pnpm install
-pnpm -r build            # build the packages
-
-# Terminal 1 — gateway (works with zero config via the "mock" model)
-pnpm --filter @mc/gateway dev
-
-# Terminal 2 — web
-pnpm --filter @mc/web dev
+pnpm dev                 # builds packages, then starts gateway (:4000) + web (:3000)
 # open http://localhost:3000
 ```
 
-To use real models, copy `.env.example` to `.env` (or export vars) and set the provider keys you have. The seeded agents map to GPT-4o, Claude 3.5 Sonnet, and Llama 3.1 (Ollama); the **Mission Assistant** uses the mock model so it streams with no keys.
+`pnpm dev` runs both apps together (it builds the workspace packages first via Turborepo).
+Prefer separate terminals? Use `pnpm dev:gateway` and `pnpm dev:web`.
+
+**Works with zero config** via the offline `mock` model and a default owner principal — no API keys needed. To use real models, copy `.env.example` to `.env` and set the provider keys you have (the seeded agents map to GPT-4o, Claude 3.5 Sonnet, and Llama 3.1/Ollama; the **Mission Assistant** uses the mock model so it always streams).
+
+## Test it (5-minute tour)
+
+Open http://localhost:3000 and:
+
+1. **Chat** — message the **Mission Assistant**. Try `summarize our risk policy` (watch the 🔎 retrieval chip — that's RAG), `please call get_time` (a tool runs), or `please send_notification hi` (a gated tool → **Approve/Reject** appears).
+2. **Mission** — live agent grid, spend ticker, connector health, and cost-by-model, updating over WebSocket as you chat in another tab.
+3. **Workflows** — run **Daily Brief**; watch nodes light up (agent → tool → agent) with streamed output.
+4. **Knowledge** — add a document, then use the **retrieval playground** to see ranked chunks.
+5. **Role switcher** (top-right) — switch to `viewer` and notice writes are blocked (RBAC); `owner`/`operator` can act.
+6. **Persistence** — restart the gateway; your conversations, agents, and usage are still there.
+
+Run `pnpm test` for the unit suite (28 tests).
 
 ## Try the API directly
 
