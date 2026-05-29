@@ -2,7 +2,7 @@
 
 Maps the [blueprint](./README.md) to what's actually built in [`/mission-control`](../../mission-control/). Phases refer to the [roadmap](./14-roadmap.md).
 
-## Built & verified (Phases 0–3)
+## Built & verified (Phases 0–3 + 5)
 
 | Capability | Blueprint | Where | Verification |
 |-----------|-----------|-------|-------------|
@@ -17,9 +17,10 @@ Maps the [blueprint](./README.md) to what's actually built in [`/mission-control
 | MCP connector framework | [08](./08-mcp-integration.md) | `packages/mcp-connectors` (stdio + builtin), `ConnectorManager` | unit tests; live `/v1/connectors` |
 | TradingView MCP as a connector | [08](./08-mcp-integration.md) | `conn_tradingview` (stdio) wired in gateway | registers; reports `down` here (no repo-root deps / no TV Desktop) — failure isolated |
 | Realtime workspace state (WS) | [09](./09-streaming-websockets.md) | gateway `GET /v1/realtime` + `Realtime` broadcaster | live WS client received `agent.status_changed`, `run.*`, `usage.recorded` |
-| Mission Control UI | [12](./12-ui-ux.md) | `apps/web` — Chat console (stream + tool chips + approvals) and live **Mission** view (agent grid, KPIs, connectors, cost-by-model) | `next build`; both routes serve 200 |
+| Workflow engine (multi-agent) | [07](./07-orchestration-multiagent.md) | `agent-core/workflow.ts` `WorkflowEngine` — graph of agent/tool nodes, state threading via `{{node}}` templates, conditional edges | unit tests; live SSE run (agent→tool→agent) |
+| Mission Control UI | [12](./12-ui-ux.md) | `apps/web` — Chat console (stream + tool chips + approvals), live **Mission** view (agent grid, KPIs, connectors, cost-by-model), and **Workflows** view (graph + live node progress) | `next build`; all routes serve 200 |
 
-Test/typecheck snapshot: **12 tests across 3 suites**, all 6 packages typecheck, web builds.
+Test/typecheck snapshot: **15 tests across 4 suites**, all 6 packages typecheck, web builds.
 
 ## Substituted for the slice (documented, swappable)
 
@@ -33,7 +34,7 @@ Test/typecheck snapshot: **12 tests across 3 suites**, all 6 packages typecheck,
 
 ## Not yet started
 
-- Workflow engine + DAG builder ([07](./07-orchestration-multiagent.md), [12](./12-ui-ux.md#3-workflow-builder)) — Phase 5
+- Drag-and-drop workflow builder UI + triggers/parallel/router nodes ([12](./12-ui-ux.md#3-workflow-builder)) — the engine + a run view exist; authoring is still JSON-seeded
 - Memory / RAG service ([10](./10-memory-rag.md)) — Phase 4
 - OpenTelemetry traces/metrics export ([11](./11-observability-cost.md)) — Phase 6
 - K8s/Helm deployment ([13](./13-security-deployment-scaling.md#deployment)) — Phase 6

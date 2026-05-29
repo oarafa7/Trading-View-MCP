@@ -3,3 +3,4 @@ export * from "./message.js";
 export * from "./stream.js";
 export * from "./agent.js";
 export * from "./usage.js";
+export * from "./workflow.js";

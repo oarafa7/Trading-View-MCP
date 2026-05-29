@@ -1,6 +1,6 @@
 # Mission Control — Monorepo
 
-Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). This covers **Phases 0–3** of the [roadmap](../docs/mission-control/14-roadmap.md): the monorepo foundation, a streaming-chat vertical slice across multiple LLM providers, the **MCP connector framework + tool-calling agent loop with human-in-the-loop approvals**, and **realtime workspace monitoring** (a live Mission view over WebSocket).
+Implementation of the [AI Mission Control architecture blueprint](../docs/mission-control/). Covers the monorepo foundation, a streaming-chat vertical slice across multiple LLM providers, the **MCP connector framework + tool-calling agent loop with human-in-the-loop approvals**, **realtime workspace monitoring** (a live Mission view over WebSocket), and a **multi-agent workflow engine** (chain agents + tools with state passing).
 
 See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md) for a blueprint-vs-built map.
 
@@ -13,7 +13,8 @@ See [IMPLEMENTATION-STATUS.md](../docs/mission-control/IMPLEMENTATION-STATUS.md)
 - **MCP connector framework** (`packages/mcp-connectors`): uniform client over MCP servers — a `stdio` transport (any MCP server, including this repo's TradingView MCP) plus in-process `builtin` connectors. A `ConnectorManager` connects, discovers tools, routes calls, and reports health (failures isolated per connector).
 - **Gateway** (`apps/gateway`, Fastify): REST for agents/models/conversations/connectors + **SSE streaming chat** at `POST /v1/conversations/:id/messages`, **HITL approvals** at `POST /v1/runs/:runId/approvals/:toolCallId`, usage rollups. In-memory store (same surface the Postgres repo will implement).
 - **Realtime monitoring** (`apps/gateway` `GET /v1/realtime`, WebSocket): broadcasts `agent.status_changed`, `run.started/completed`, and `usage.recorded` to subscribed dashboards (in-process broadcaster; the Redis-backed swap is documented).
-- **Web** (`apps/web`, Next.js): two views — a **Chat** console (live stream, tool-call chips, Approve/Reject controls) and a live **Mission** view (agent grid, KPIs, connector health, cost-by-model) updating over WebSocket.
+- **Workflow engine** (`packages/agent-core` `WorkflowEngine`): executes a graph of agent/tool nodes, threading each node's output into later prompts via `{{nodeId}}` templates, with conditional edges. Gateway runs them at `POST /v1/workflows/:id/run` (SSE, node-level progress) and broadcasts `workflow.*` events.
+- **Web** (`apps/web`, Next.js): three views — a **Chat** console (live stream, tool-call chips, Approve/Reject), a live **Mission** view (agent grid, KPIs, connector health, cost-by-model) over WebSocket, and a **Workflows** view (graph + live per-node progress).
 
 ## Quick start
 

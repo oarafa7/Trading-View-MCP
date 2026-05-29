@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/", label: "Chat" },
   { href: "/mission", label: "Mission" },
+  { href: "/workflows", label: "Workflows" },
 ];
 
 export function TopNav({ right }: { right?: React.ReactNode }) {

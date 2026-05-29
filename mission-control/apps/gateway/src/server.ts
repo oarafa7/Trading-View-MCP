@@ -3,7 +3,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { z } from "zod";
 import { ProviderRegistry } from "@mc/providers";
-import { AgentRuntime, id, nowIso, type ResolvedTool } from "@mc/agent-core";
+import { AgentRuntime, WorkflowEngine, id, nowIso, type ResolvedTool, type RunEvent } from "@mc/agent-core";
 import type { AgentDefinition } from "@mc/types";
 import { MemoryStore } from "./store.js";
 import { loadConfig, makeModelResolver } from "./config.js";
@@ -43,6 +43,32 @@ function resolveTools(agent: AgentDefinition): ResolvedTool[] {
   return out;
 }
 
+// Workflow engine: runs agent nodes via the agent runtime, tool nodes via the connector pool.
+const workflowEngine = new WorkflowEngine((g, nodeId) => g.nodes.find((n) => n.id === nodeId), {
+  async *runAgentNode(agentId, prompt): AsyncGenerator<RunEvent> {
+    const agent = store.agents.get(agentId);
+    if (!agent) {
+      yield { type: "error", error: { code: "BAD_REQUEST", message: `unknown agent "${agentId}"`, retryable: false } };
+      return;
+    }
+    const tools = resolveTools(agent);
+    for await (const ev of runtime.run({
+      agent,
+      history: [{ role: "user", content: prompt }],
+      tools: tools.length ? tools : undefined,
+      executeTool: (c, n, a) => connectors.call(c, n, a),
+      requestApproval: async () => true, // workflow nodes auto-approve (workflow-level HITL is future)
+    })) {
+      if (ev.type === "usage") {
+        store.recordUsage(ev.event);
+        realtime.publish("usage.recorded", { ...ev.event, agentCostToDate: agent.costToDate });
+      }
+      yield ev;
+    }
+  },
+  runToolNode: (connectorId, tool, args) => connectors.call(connectorId, tool, args),
+});
+
 // --- health ---
 app.get("/v1/health", async () => ({
   ok: true,
@@ -74,6 +100,49 @@ app.get("/v1/models", async () => [...store.models.values()]);
 app.get("/v1/connectors", async () =>
   connectors.health().map((h) => ({ ...h, tools: connectors.toolsFor(h.id).map((t) => t.name) })),
 );
+
+// --- workflows ---
+app.get("/v1/workflows", async () => [...store.workflows.values()]);
+
+app.get("/v1/workflows/:id", async (req, reply) => {
+  const wf = store.workflows.get((req.params as { id: string }).id);
+  if (!wf) return reply.code(404).send({ code: "NOT_FOUND", message: "workflow not found" });
+  return wf;
+});
+
+const RunWorkflow = z.object({ input: z.string().default("") });
+
+app.post("/v1/workflows/:id/run", async (req, reply) => {
+  const wf = store.workflows.get((req.params as { id: string }).id);
+  if (!wf) return reply.code(404).send({ code: "NOT_FOUND", message: "workflow not found" });
+  const parsed = RunWorkflow.safeParse(req.body ?? {});
+  if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
+
+  reply.hijack();
+  const sse = new SSEStream(reply);
+  const ac = new AbortController();
+  reply.raw.on("close", () => {
+    if (!reply.raw.writableEnded) ac.abort();
+  });
+
+  const workflowRunId = id("wfr");
+  realtime.publish("workflow.started", { workflowRunId, workflowId: wf.id, name: wf.name });
+  sse.send("workflow_started", { workflowRunId, workflowId: wf.id });
+
+  try {
+    for await (const ev of workflowEngine.run(wf.graph, parsed.data.input)) {
+      sse.send(ev.type, ev);
+      if (ev.type === "node_started") realtime.publish("workflow.step_started", { workflowRunId, nodeId: ev.nodeId, nodeType: ev.nodeType });
+      else if (ev.type === "node_completed") realtime.publish("workflow.step_completed", { workflowRunId, nodeId: ev.nodeId });
+      if (ac.signal.aborted) break;
+    }
+  } catch (err) {
+    sse.send("error", { message: err instanceof Error ? err.message : String(err) });
+  } finally {
+    realtime.publish("workflow.completed", { workflowRunId, workflowId: wf.id });
+    sse.close();
+  }
+});
 
 // --- HITL approvals ---
 app.post("/v1/runs/:runId/approvals/:toolCallId", async (req, reply) => {

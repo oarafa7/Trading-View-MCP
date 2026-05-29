@@ -1,4 +1,4 @@
-import type { AgentDefinition, ModelInfo, UnifiedMessage, UsageEvent, MessageRole } from "@mc/types";
+import type { AgentDefinition, ModelInfo, UnifiedMessage, UsageEvent, MessageRole, Workflow } from "@mc/types";
 import { id, nowIso } from "@mc/agent-core";
 
 export interface StoredMessage {
@@ -30,6 +30,7 @@ export class MemoryStore {
   agents = new Map<string, AgentDefinition>();
   conversations = new Map<string, Conversation>();
   messages = new Map<string, StoredMessage[]>(); // conversationId -> messages
+  workflows = new Map<string, Workflow>();
   usage: UsageEvent[] = [];
 
   constructor() {
@@ -130,6 +131,31 @@ export class MemoryStore {
       },
     ];
     for (const a of agents) this.agents.set(a.id, a);
+
+    const wf: Workflow = {
+      id: "wf_brief",
+      workspaceId: this.workspaceId,
+      name: "Daily Brief",
+      createdAt: ts,
+      graph: {
+        entry: "research",
+        nodes: [
+          { id: "research", type: "agent", agentId: "agt_assistant", prompt: "Research notes on: {{input}}" },
+          { id: "clock", type: "tool", connectorId: "conn_utility", tool: "get_time" },
+          {
+            id: "brief",
+            type: "agent",
+            agentId: "agt_assistant",
+            prompt: "Write a short brief.\nTopic: {{input}}\nTime: {{clock}}\nResearch: {{research}}",
+          },
+        ],
+        edges: [
+          { from: "research", to: "clock" },
+          { from: "clock", to: "brief" },
+        ],
+      },
+    };
+    this.workflows.set(wf.id, wf);
   }
 
   createConversation(title: string, participantAgentIds: string[]): Conversation {
