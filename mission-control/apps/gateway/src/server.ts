@@ -12,6 +12,7 @@ import { SSEStream } from "./sse.js";
 import { buildConnectors } from "./connectors.js";
 import { Realtime } from "./realtime.js";
 import { seedKnowledge } from "./knowledge.js";
+import { installAuth, requirePerm } from "./auth.js";
 
 const config = loadConfig();
 const store = new MemoryStore();
@@ -25,6 +26,7 @@ seedKnowledge(memory, store.workspaceId);
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 await app.register(cors, { origin: true, credentials: true });
 await app.register(websocket);
+installAuth(app, store.workspaceId);
 await connectors.connectAll((msg) => app.log.info(msg));
 
 /** Update an agent's live status and broadcast the change to subscribed dashboards. */
@@ -82,6 +84,9 @@ app.get("/v1/health", async () => ({
 
 app.get("/v1/workspaces", async () => [{ id: store.workspaceId, name: "Default Workspace" }]);
 
+// --- current principal (who am I + what can I do) ---
+app.get("/v1/me", async (req) => req.principal);
+
 // --- realtime workspace state (WebSocket) ---
 app.get("/v1/realtime", { websocket: true }, (socket: { send: (d: string) => void; on: (ev: string, cb: (raw?: unknown) => void) => void }) => {
   realtime.add(socket);
@@ -113,6 +118,7 @@ app.get("/v1/knowledge", async () => ({
 
 const IngestDoc = z.object({ title: z.string().min(1), text: z.string().min(1) });
 app.post("/v1/knowledge", async (req, reply) => {
+  if (!requirePerm(req, reply, "knowledge:write")) return;
   const parsed = IngestDoc.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
   const source = memory.ingest(store.workspaceId, parsed.data.title, parsed.data.text);
@@ -140,6 +146,7 @@ const RunWorkflow = z.object({ input: z.string().default("") });
 app.post("/v1/workflows/:id/run", async (req, reply) => {
   const wf = store.workflows.get((req.params as { id: string }).id);
   if (!wf) return reply.code(404).send({ code: "NOT_FOUND", message: "workflow not found" });
+  if (!requirePerm(req, reply, "workflows:run")) return;
   const parsed = RunWorkflow.safeParse(req.body ?? {});
   if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
 
@@ -171,6 +178,7 @@ app.post("/v1/workflows/:id/run", async (req, reply) => {
 
 // --- HITL approvals ---
 app.post("/v1/runs/:runId/approvals/:toolCallId", async (req, reply) => {
+  if (!requirePerm(req, reply, "runs:approve")) return;
   const { toolCallId } = req.params as { runId: string; toolCallId: string };
   const decision = (req.body as { decision?: string } | undefined)?.decision;
   const resolve = pendingApprovals.get(toolCallId);
@@ -198,6 +206,7 @@ const CreateAgent = z.object({
 });
 
 app.post("/v1/agents", async (req, reply) => {
+  if (!requirePerm(req, reply, "agents:write")) return;
   const parsed = CreateAgent.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });
   if (!store.models.has(parsed.data.modelId)) return reply.code(400).send({ code: "BAD_REQUEST", message: "unknown modelId" });
@@ -222,6 +231,7 @@ app.post("/v1/agents", async (req, reply) => {
 });
 
 app.patch("/v1/agents/:id", async (req, reply) => {
+  if (!requirePerm(req, reply, "agents:write")) return;
   const agent = store.agents.get((req.params as { id: string }).id);
   if (!agent) return reply.code(404).send({ code: "NOT_FOUND", message: "agent not found" });
   const patch = req.body as Partial<AgentDefinition>;
@@ -236,6 +246,7 @@ app.patch("/v1/agents/:id", async (req, reply) => {
 });
 
 app.delete("/v1/agents/:id", async (req, reply) => {
+  if (!requirePerm(req, reply, "agents:write")) return;
   const ok = store.agents.delete((req.params as { id: string }).id);
   return reply.code(ok ? 204 : 404).send();
 });
@@ -244,6 +255,7 @@ app.delete("/v1/agents/:id", async (req, reply) => {
 app.get("/v1/conversations", async () => [...store.conversations.values()]);
 
 app.post("/v1/conversations", async (req, reply) => {
+  if (!requirePerm(req, reply, "conversations:write")) return;
   const body = (req.body ?? {}) as { title?: string; participantAgentIds?: string[] };
   const conv = store.createConversation(body.title ?? "New conversation", body.participantAgentIds ?? ["agt_assistant"]);
   return reply.code(201).send(conv);
@@ -268,6 +280,7 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
   const convId = (req.params as { id: string }).id;
   const conv = store.conversations.get(convId);
   if (!conv) return reply.code(404).send({ code: "NOT_FOUND", message: "conversation not found" });
+  if (!requirePerm(req, reply, "conversations:write")) return;
 
   const parsed = PostMessage.safeParse(req.body);
   if (!parsed.success) return reply.code(400).send({ code: "BAD_REQUEST", message: parsed.error.message });

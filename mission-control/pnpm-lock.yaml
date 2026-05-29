@@ -38,6 +38,9 @@ importers:
       '@mc/agent-core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@mc/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@mc/mcp-connectors':
         specifier: workspace:*
         version: link:../../packages/mcp-connectors
@@ -99,6 +102,8 @@ importers:
       '@mc/types':
         specifier: workspace:*
         version: link:../types
+
+  packages/auth: {}
 
   packages/mcp-connectors:
     dependencies:

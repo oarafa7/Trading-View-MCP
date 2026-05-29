@@ -1,5 +1,25 @@
 export const GATEWAY = process.env.NEXT_PUBLIC_GATEWAY_URL ?? "http://localhost:4000";
 
+const TOKEN_KEY = "mc_token";
+/** Dev auth token (maps to a role on the gateway). Defaults to owner so zero-config works. */
+export function getToken(): string {
+  if (typeof window === "undefined") return "dev-owner";
+  return window.localStorage.getItem(TOKEN_KEY) ?? "dev-owner";
+}
+export function setToken(token: string): void {
+  if (typeof window !== "undefined") window.localStorage.setItem(TOKEN_KEY, token);
+}
+function authHeaders(): Record<string, string> {
+  return { authorization: `Bearer ${getToken()}` };
+}
+
+export interface Principal {
+  userId: string;
+  workspaceId: string;
+  role: "owner" | "admin" | "operator" | "viewer";
+  name: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -61,12 +81,13 @@ export interface RetrievedChunk {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(`${GATEWAY}${path}`, { cache: "no-store" });
+  const res = await fetch(`${GATEWAY}${path}`, { cache: "no-store", headers: authHeaders() });
   if (!res.ok) throw new Error(`${path}: ${res.status}`);
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  me: () => getJSON<Principal>("/v1/me"),
   agents: () => getJSON<Agent[]>("/v1/agents"),
   models: () => getJSON<Model[]>("/v1/models"),
   conversations: () => getJSON<Conversation[]>("/v1/conversations"),
@@ -77,7 +98,7 @@ export const api = {
   async ingestDoc(title: string, text: string): Promise<KnowledgeSource> {
     const res = await fetch(`${GATEWAY}/v1/knowledge`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ title, text }),
     });
     return res.json() as Promise<KnowledgeSource>;
@@ -85,7 +106,7 @@ export const api = {
   async searchKnowledge(query: string, topK = 5): Promise<{ query: string; chunks: RetrievedChunk[] }> {
     const res = await fetch(`${GATEWAY}/v1/knowledge/search`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ query, topK }),
     });
     return res.json() as Promise<{ query: string; chunks: RetrievedChunk[] }>;
@@ -93,7 +114,7 @@ export const api = {
   async createConversation(participantAgentIds: string[], title = "New conversation"): Promise<Conversation> {
     const res = await fetch(`${GATEWAY}/v1/conversations`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify({ title, participantAgentIds }),
     });
     return res.json() as Promise<Conversation>;
@@ -121,7 +142,7 @@ export async function decideApproval(
 ): Promise<void> {
   await fetch(`${GATEWAY}/v1/runs/${runId}/approvals/${toolCallId}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ decision }),
   });
 }
@@ -138,7 +159,7 @@ async function postSSE(
 ): Promise<void> {
   const res = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream" },
+    headers: { "content-type": "application/json", accept: "text/event-stream", ...authHeaders() },
     body: JSON.stringify(body),
     signal,
   });
