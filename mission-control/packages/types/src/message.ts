@@ -25,6 +25,14 @@ export const ToolResultPart = z.object({
 export const ContentPart = z.discriminatedUnion("type", [TextPart, ToolCallPart, ToolResultPart]);
 export type ContentPart = z.infer<typeof ContentPart>;
 
+/** Result returned by an MCP tool invocation. */
+export const ToolResult = z.object({
+  ok: z.boolean(),
+  content: z.unknown(),
+  isError: z.boolean().default(false),
+});
+export type ToolResult = z.infer<typeof ToolResult>;
+
 export const MessageRole = z.enum(["system", "user", "assistant", "tool"]);
 export type MessageRole = z.infer<typeof MessageRole>;
 

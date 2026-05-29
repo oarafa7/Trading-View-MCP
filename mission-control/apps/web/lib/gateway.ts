@@ -63,9 +63,25 @@ export interface StreamHandlers {
   onToken?: (delta: string) => void;
   onReasoning?: (delta: string) => void;
   onToolCall?: (name: string, argsDelta: string) => void;
+  onToolCallDone?: (info: { id: string; name: string; args: unknown }) => void;
+  onAwaitingApproval?: (info: { runId: string; toolCallId: string; name: string; args: unknown }) => void;
+  onToolResult?: (info: { toolCallId: string; name: string; ok: boolean; result: unknown }) => void;
   onUsage?: (usage: { costUsd: number; inputTokens: number; outputTokens: number }) => void;
   onDone?: () => void;
   onError?: (err: { code: string; message: string }) => void;
+}
+
+/** Approve or reject a gated tool call that the run is waiting on. */
+export async function decideApproval(
+  runId: string,
+  toolCallId: string,
+  decision: "approve" | "reject",
+): Promise<void> {
+  await fetch(`${GATEWAY}/v1/runs/${runId}/approvals/${toolCallId}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ decision }),
+  });
 }
 
 /**
@@ -126,6 +142,15 @@ export async function streamMessage(
           break;
         case "tool_call":
           handlers.onToolCall?.(data.name, data.argsDelta);
+          break;
+        case "tool_call_done":
+          handlers.onToolCallDone?.(data);
+          break;
+        case "awaiting_approval":
+          handlers.onAwaitingApproval?.(data);
+          break;
+        case "tool_result":
+          handlers.onToolResult?.(data);
           break;
         case "usage":
           handlers.onUsage?.(data);

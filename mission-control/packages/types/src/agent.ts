@@ -38,6 +38,14 @@ export type AgentMemoryConfig = z.infer<typeof AgentMemoryConfig>;
 export const AgentStatus = z.enum(["idle", "running", "awaiting_approval", "error", "disabled"]);
 export type AgentStatus = z.infer<typeof AgentStatus>;
 
+/** A grant allowing an agent to call one tool on one connector, with an optional HITL gate. */
+export const AgentToolGrant = z.object({
+  connectorId: z.string(),
+  toolName: z.string(),
+  requireApproval: z.boolean().default(false),
+});
+export type AgentToolGrant = z.infer<typeof AgentToolGrant>;
+
 export const AgentDefinition = z.object({
   id: z.string(),
   workspaceId: z.string(),
@@ -47,6 +55,7 @@ export const AgentDefinition = z.object({
   modelId: z.string(),
   settings: AgentSettings.default({}),
   memory: AgentMemoryConfig.default({}),
+  tools: z.array(AgentToolGrant).default([]),
   status: AgentStatus.default("idle"),
   costToDate: z.number().nonnegative().default(0),
   createdAt: z.string(),

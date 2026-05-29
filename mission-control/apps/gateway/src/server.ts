@@ -2,19 +2,35 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { z } from "zod";
 import { ProviderRegistry } from "@mc/providers";
-import { AgentRuntime, id, nowIso } from "@mc/agent-core";
+import { AgentRuntime, id, nowIso, type ResolvedTool } from "@mc/agent-core";
 import type { AgentDefinition } from "@mc/types";
 import { MemoryStore } from "./store.js";
 import { loadConfig, makeModelResolver } from "./config.js";
 import { SSEStream } from "./sse.js";
+import { buildConnectors } from "./connectors.js";
 
 const config = loadConfig();
 const store = new MemoryStore();
 const registry = new ProviderRegistry();
 const runtime = new AgentRuntime(registry, makeModelResolver(store));
+const connectors = buildConnectors();
 
 const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 await app.register(cors, { origin: true, credentials: true });
+await connectors.connectAll((msg) => app.log.info(msg));
+
+// Pending HITL approvals, keyed by toolCallId. Resolved by POST /v1/runs/:runId/approvals/:id.
+const pendingApprovals = new Map<string, (approved: boolean) => void>();
+
+/** Resolve an agent's tool grants into runnable tool specs (skipping any whose connector is down). */
+function resolveTools(agent: AgentDefinition): ResolvedTool[] {
+  const out: ResolvedTool[] = [];
+  for (const g of agent.tools) {
+    const spec = connectors.toolSpec(g.connectorId, g.toolName);
+    if (spec) out.push({ spec, connectorId: g.connectorId, requireApproval: g.requireApproval });
+  }
+  return out;
+}
 
 // --- health ---
 app.get("/v1/health", async () => ({
@@ -27,6 +43,22 @@ app.get("/v1/workspaces", async () => [{ id: store.workspaceId, name: "Default W
 
 // --- models ---
 app.get("/v1/models", async () => [...store.models.values()]);
+
+// --- connectors ---
+app.get("/v1/connectors", async () =>
+  connectors.health().map((h) => ({ ...h, tools: connectors.toolsFor(h.id).map((t) => t.name) })),
+);
+
+// --- HITL approvals ---
+app.post("/v1/runs/:runId/approvals/:toolCallId", async (req, reply) => {
+  const { toolCallId } = req.params as { runId: string; toolCallId: string };
+  const decision = (req.body as { decision?: string } | undefined)?.decision;
+  const resolve = pendingApprovals.get(toolCallId);
+  if (!resolve) return reply.code(404).send({ code: "NOT_FOUND", message: "no pending approval for that tool call" });
+  pendingApprovals.delete(toolCallId);
+  resolve(decision === "approve");
+  return { ok: true, decision: decision === "approve" ? "approved" : "rejected" };
+});
 
 // --- agents ---
 app.get("/v1/agents", async () => [...store.agents.values()]);
@@ -59,6 +91,7 @@ app.post("/v1/agents", async (req, reply) => {
     modelId: parsed.data.modelId,
     settings: { maxToolIterations: 8, ...parsed.data.settings },
     memory: { shortTerm: "window", longTerm: false },
+    tools: [],
     status: "idle",
     costToDate: 0,
     createdAt: ts,
@@ -139,8 +172,26 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
   agent.status = "running";
   agent.updatedAt = nowIso();
 
+  const tools = resolveTools(agent);
+  const approvalToolCallIds = new Set<string>();
+
   try {
-    for await (const ev of runtime.run({ agent, history: store.history(convId), runId, signal: ac.signal })) {
+    for await (const ev of runtime.run({
+      agent,
+      history: store.history(convId),
+      runId,
+      signal: ac.signal,
+      tools: tools.length ? tools : undefined,
+      executeTool: (connectorId, name, args) => connectors.call(connectorId, name, args),
+      requestApproval: ({ toolCallId }) =>
+        new Promise<boolean>((resolve) => {
+          approvalToolCallIds.add(toolCallId);
+          pendingApprovals.set(toolCallId, resolve);
+          ac.signal.addEventListener("abort", () => {
+            if (pendingApprovals.delete(toolCallId)) resolve(false);
+          });
+        }),
+    })) {
       switch (ev.type) {
         case "token":
           assistantText += ev.delta;
@@ -154,6 +205,14 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
           break;
         case "tool_call_done":
           sse.send("tool_call_done", { id: ev.id, name: ev.name, args: ev.args });
+          break;
+        case "awaiting_approval":
+          agent.status = "awaiting_approval";
+          sse.send("awaiting_approval", { runId, toolCallId: ev.toolCallId, name: ev.name, args: ev.args });
+          break;
+        case "tool_result":
+          if (agent.status === "awaiting_approval") agent.status = "running";
+          sse.send("tool_result", { toolCallId: ev.toolCallId, name: ev.name, ok: ev.ok, result: ev.result });
           break;
         case "usage":
           store.recordUsage(ev.event);
@@ -171,8 +230,9 @@ app.post("/v1/conversations/:id/messages", async (req, reply) => {
   } catch (err) {
     sse.send("error", { code: "UNKNOWN", message: err instanceof Error ? err.message : String(err), retryable: false });
   } finally {
+    for (const tcId of approvalToolCallIds) pendingApprovals.delete(tcId);
     if (assistantText) store.addMessage(convId, { role: "assistant", content: assistantText, agentId, runId });
-    if (agent.status === "running") agent.status = "idle";
+    if (agent.status !== "error") agent.status = "idle";
     agent.updatedAt = nowIso();
     sse.close();
   }

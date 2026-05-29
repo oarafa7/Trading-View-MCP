@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { api, streamMessage, type Agent, type Model, type ChatMessage } from "@/lib/gateway";
+import { api, streamMessage, decideApproval, type Agent, type Model, type ChatMessage } from "@/lib/gateway";
 import { StatusDot } from "@/components/StatusDot";
+
+interface ToolActivity {
+  toolCallId: string;
+  name: string;
+  status: "called" | "awaiting" | "done" | "denied";
+  runId?: string;
+}
 
 export default function MissionControl() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -11,6 +18,7 @@ export default function MissionControl() {
   const [convId, setConvId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [live, setLive] = useState<string>("");
+  const [activity, setActivity] = useState<ToolActivity[]>([]);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState("");
   const [totalCost, setTotalCost] = useState(0);
@@ -61,7 +69,17 @@ export default function MissionControl() {
 
     setMessages((prev) => [...prev, { id: `local_${Date.now()}`, role: "user", content: text }]);
     setLive("");
+    setActivity([]);
     setAgents((prev) => prev.map((a) => (a.id === active.id ? { ...a, status: "running" } : a)));
+
+    const upsert = (item: ToolActivity) =>
+      setActivity((prev) => {
+        const i = prev.findIndex((x) => x.toolCallId === item.toolCallId);
+        if (i === -1) return [...prev, item];
+        const next = [...prev];
+        next[i] = { ...next[i], ...item };
+        return next;
+      });
 
     let acc = "";
     await streamMessage(cid, text, active.id, {
@@ -69,6 +87,9 @@ export default function MissionControl() {
         acc += d;
         setLive(acc);
       },
+      onToolCallDone: ({ id, name }) => upsert({ toolCallId: id, name, status: "called" }),
+      onAwaitingApproval: ({ runId, toolCallId, name }) => upsert({ toolCallId, name, status: "awaiting", runId }),
+      onToolResult: ({ toolCallId, name, ok }) => upsert({ toolCallId, name, status: ok ? "done" : "denied" }),
       onUsage: (u) => setTotalCost((c) => Math.round((c + u.costUsd) * 1e6) / 1e6),
       onError: (e) => {
         acc += `\n\n⚠️ ${e.code}: ${e.message}`;
@@ -79,9 +100,18 @@ export default function MissionControl() {
 
     setMessages((prev) => [...prev, { id: `a_${Date.now()}`, role: "assistant", content: acc, agentId: active.id }]);
     setLive("");
+    setActivity([]);
     setBusy(false);
     setAgents((prev) => prev.map((a) => (a.id === active.id ? { ...a, status: "idle" } : a)));
     void refresh();
+  }
+
+  async function approve(item: ToolActivity, decision: "approve" | "reject") {
+    if (!item.runId) return;
+    setActivity((prev) =>
+      prev.map((x) => (x.toolCallId === item.toolCallId ? { ...x, status: decision === "approve" ? "called" : "denied" } : x)),
+    );
+    await decideApproval(item.runId, item.toolCallId, decision);
   }
 
   function switchAgent(id: string) {
@@ -90,6 +120,7 @@ export default function MissionControl() {
     setConvId("");
     setMessages([]);
     setLive("");
+    setActivity([]);
   }
 
   return (
@@ -162,6 +193,13 @@ export default function MissionControl() {
           {messages.map((m) => (
             <Bubble key={m.id} role={m.role} text={m.content} />
           ))}
+          {activity.length > 0 && (
+            <div className="space-y-2">
+              {activity.map((t) => (
+                <ToolChip key={t.toolCallId} item={t} onDecide={approve} />
+              ))}
+            </div>
+          )}
           {live && <Bubble role="assistant" text={live} streaming />}
         </div>
 
@@ -192,6 +230,39 @@ export default function MissionControl() {
           </div>
         </div>
       </main>
+    </div>
+  );
+}
+
+function ToolChip({ item, onDecide }: { item: ToolActivity; onDecide: (i: ToolActivity, d: "approve" | "reject") => void }) {
+  const label: Record<ToolActivity["status"], string> = {
+    called: "called",
+    awaiting: "awaiting approval",
+    done: "completed",
+    denied: "denied",
+  };
+  const tone: Record<ToolActivity["status"], string> = {
+    called: "text-accent",
+    awaiting: "text-amber",
+    done: "text-ok",
+    denied: "text-danger",
+  };
+  return (
+    <div className="flex items-center justify-between rounded-lg border border-border bg-base px-3 py-2 font-mono text-xs">
+      <span>
+        <span className="text-muted">tool</span> <span className="text-white">{item.name}</span>{" "}
+        <span className={tone[item.status]}>· {label[item.status]}</span>
+      </span>
+      {item.status === "awaiting" && (
+        <span className="flex gap-2">
+          <button onClick={() => onDecide(item, "approve")} className="rounded bg-ok px-2 py-0.5 text-base">
+            Approve
+          </button>
+          <button onClick={() => onDecide(item, "reject")} className="rounded bg-danger px-2 py-0.5 text-white">
+            Reject
+          </button>
+        </span>
+      )}
     </div>
   );
 }

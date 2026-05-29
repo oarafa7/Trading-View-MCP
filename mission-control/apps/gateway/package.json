@@ -13,6 +13,7 @@
   "dependencies": {
     "@fastify/cors": "^10.0.1",
     "@mc/agent-core": "workspace:*",
+    "@mc/mcp-connectors": "workspace:*",
     "@mc/providers": "workspace:*",
     "@mc/types": "workspace:*",
     "fastify": "^5.2.0",
