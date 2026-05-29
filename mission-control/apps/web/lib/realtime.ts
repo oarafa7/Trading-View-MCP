@@ -8,7 +8,9 @@ export interface RealtimeEvent {
 
 /** Open a workspace realtime socket, subscribe to topics, and stream events to `onEvent`. */
 export function openRealtime(topics: string[], onEvent: (ev: RealtimeEvent) => void): () => void {
-  const url = GATEWAY.replace(/^http/, "ws") + "/v1/realtime";
+  // Same-origin when GATEWAY is empty (single-origin deploy); else derive ws from the gateway URL.
+  const base = GATEWAY || (typeof window !== "undefined" ? window.location.origin : "");
+  const url = base.replace(/^http/, "ws") + "/v1/realtime";
   let closed = false;
   let ws: WebSocket | null = null;
 

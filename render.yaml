@@ -1,0 +1,33 @@
+# Render Blueprint — deploy AI Mission Control as a single Docker web service.
+# In Render: New → Blueprint → connect this repo → it reads this file → Deploy.
+# Result: a permanent public https URL serving the full app (UI + API + WebSocket).
+services:
+  - type: web
+    name: ai-mission-control
+    runtime: docker
+    dockerfilePath: mission-control/Dockerfile
+    dockerContext: mission-control
+    plan: free
+    healthCheckPath: /v1/health
+    autoDeploy: false
+    envVars:
+      # Optional — set the provider keys you have to enable real models. The offline "mock"
+      # model works with none of these, so the app is fully usable without any keys.
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: TOGETHER_API_KEY
+        sync: false
+      # Set to "true" to require a valid bearer token (otherwise dev defaults to an owner principal).
+      - key: AUTH_REQUIRED
+        sync: false
+    # For durable data across deploys, attach a disk and set DB_PATH=/var/data/mc.db:
+    # disk:
+    #   name: data
+    #   mountPath: /var/data
+    #   sizeGB: 1

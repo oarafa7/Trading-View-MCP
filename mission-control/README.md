@@ -46,6 +46,35 @@ Open http://localhost:3000 and:
 
 Run `pnpm test` for the unit suite (28 tests).
 
+## Deploy (get a public URL)
+
+The app is packaged as a **single Docker container** that serves the UI, REST API, SSE, and
+WebSocket on one port (the web UI is built as a same-origin static export and served by the
+gateway). So any container host gives you one public URL for the whole thing.
+
+**Render (one blueprint, free tier)** — a [`render.yaml`](../render.yaml) is included:
+1. Push this branch to GitHub (done).
+2. In Render → **New → Blueprint** → connect this repo → it reads `render.yaml` → **Apply**.
+3. Render builds `mission-control/Dockerfile` and gives you `https://<name>.onrender.com`.
+4. (Optional) add provider keys (`OPENAI_API_KEY`, …) in the dashboard for real models — the
+   offline `mock` model works with none.
+
+**Run the production container locally:**
+```bash
+cd mission-control
+docker build -t mission-control -f Dockerfile .
+docker run -p 4000:4000 -e PORT=4000 mission-control
+# open http://localhost:4000
+```
+
+**Other hosts:** the same Dockerfile deploys to Railway (`railway up`), Fly (`fly launch`),
+or Google Cloud Run. They inject `PORT`; the gateway honors it. For durable data across
+redeploys, mount a volume and point `DB_PATH` at it (SQLite); otherwise data is ephemeral.
+
+> Vercel note: Vercel hosts the static UI fine, but the gateway needs a long-lived process
+> (WebSocket + SQLite + MCP child processes), so deploy the **container** to a process host
+> rather than splitting them.
+
 ## Try the API directly
 
 ```bash

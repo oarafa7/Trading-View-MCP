@@ -1,6 +1,9 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
+import fastifyStatic from "@fastify/static";
 import { z } from "zod";
 import { ProviderRegistry } from "@mc/providers";
 import { AgentRuntime, WorkflowEngine, id, nowIso, type ResolvedTool, type RunEvent } from "@mc/agent-core";
@@ -395,6 +398,20 @@ app.get("/v1/usage", async (req) => {
   const totalCost = Math.round([...buckets.values()].reduce((s, b) => s + b.costUsd, 0) * 1e6) / 1e6;
   return { groupBy, totalCostUsd: totalCost, buckets: [...buckets.values()] };
 });
+
+// Serve the built web UI (static export) on the same origin as the API, when present.
+// This makes a single port (and a single public URL/tunnel) serve the whole app.
+const webDir = process.env.WEB_DIR ?? fileURLToPath(new URL("../../web/out", import.meta.url));
+if (existsSync(webDir)) {
+  await app.register(fastifyStatic, { root: webDir });
+  app.setNotFoundHandler((req, reply) => {
+    if (req.method === "GET" && !req.url.startsWith("/v1")) return reply.sendFile("index.html");
+    return reply.code(404).send({ code: "NOT_FOUND", message: "not found" });
+  });
+  app.log.info(`serving web UI from ${webDir}`);
+} else {
+  app.log.info("web UI not built (apps/web/out missing) — running API only");
+}
 
 app
   .listen({ port: config.port, host: "0.0.0.0" })
